@@ -7,18 +7,57 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <section id="authGate" class="auth-wrap">
-      <article class="card"><h2>Login</h2><form id="loginForm" class="form-grid"><label class="full">Email<input name="email" type="email" required/></label><label class="full">Password<input name="password" type="password" required/></label><button class="full">Login</button></form></article>
-      <article class="card"><h2>Register</h2><form id="registerForm" class="form-grid"><label class="full">Name<input name="name" required/></label><label class="full">Email<input name="email" type="email" required/></label><label class="full">Password<input name="password" type="password" required/></label><button class="full">Create account</button></form></article>
-    </section>
+    <div id="app" class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <h1>HearthLedger</h1>
+          <p>Family finance, simplified</p>
+        </div>
 
-    <div id="app" class="app-shell hidden">
-      <aside class="sidebar"><div class="brand"><h1>HearthLedger</h1><p>Family finance, persisted in DB</p></div></aside>
+        <nav class="nav" id="navMenu"></nav>
+
+        <section class="user-switcher card">
+          <h2>Profile</h2>
+          <select id="activeUser"></select>
+          <button id="newUserBtn" class="secondary">+ Add Family Member</button>
+          <label class="row-switch">
+            <span>Family View</span>
+            <input type="checkbox" id="familyMode" />
+          </label>
+        </section>
+      </aside>
+
       <main class="content">
-        <header class="topbar card"><div><h2>Dashboard</h2><p>Shared family finance across devices.</p></div><div class="badge" id="monthBadge"></div></header>
+        <header class="topbar card">
+          <div>
+            <h2 id="screenTitle">Dashboard</h2>
+            <p id="screenSubtitle">A calm view of monthly spending.</p>
+          </div>
+          <div class="badge" id="monthBadge"></div>
+        </header>
+
         <section id="dashboardScreen" class="screen"></section>
+        <section id="transactionsScreen" class="screen hidden"></section>
+        <section id="recurringScreen" class="screen hidden"></section>
+        <section id="insightsScreen" class="screen hidden"></section>
+        <section id="settingsScreen" class="screen hidden"></section>
       </main>
     </div>
+
+    <dialog id="userDialog">
+      <form method="dialog" id="userForm" class="dialog-form">
+        <h3>Add Family Member</h3>
+        <label>
+          Name
+          <input required id="userName" placeholder="e.g., Priya" />
+        </label>
+        <menu>
+          <button value="cancel" class="secondary">Cancel</button>
+          <button value="confirm">Save</button>
+        </menu>
+      </form>
+    </dialog>
+
     <script src="app.js" type="module"></script>
   </body>
 </html>

@@ -143,6 +143,3 @@ canvas { width: 100%; background: var(--surface-soft); border-radius: 10px; }
   .app-shell { grid-template-columns: 1fr; }
   .grid-two { grid-template-columns: 1fr; }
 }
-
-.auth-wrap{max-width:900px;margin:2rem auto;display:grid;grid-template-columns:1fr 1fr;gap:1rem;padding:0 1rem;}
-@media (max-width:960px){.auth-wrap{grid-template-columns:1fr;}}
