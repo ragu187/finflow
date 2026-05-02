@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HearthLedger · Family Finance Manager</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <section id="authGate" class="auth-wrap">
+      <article class="card"><h2>Login</h2><form id="loginForm" class="form-grid"><label class="full">Email<input name="email" type="email" required/></label><label class="full">Password<input name="password" type="password" required/></label><button class="full">Login</button></form></article>
+      <article class="card"><h2>Register</h2><form id="registerForm" class="form-grid"><label class="full">Name<input name="name" required/></label><label class="full">Email<input name="email" type="email" required/></label><label class="full">Password<input name="password" type="password" required/></label><button class="full">Create account</button></form></article>
+    </section>
+
+    <div id="app" class="app-shell hidden">
+      <aside class="sidebar"><div class="brand"><h1>HearthLedger</h1><p>Family finance, persisted in DB</p></div></aside>
+      <main class="content">
+        <header class="topbar card"><div><h2>Dashboard</h2><p>Shared family finance across devices.</p></div><div class="badge" id="monthBadge"></div></header>
+        <section id="dashboardScreen" class="screen"></section>
+      </main>
+    </div>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
