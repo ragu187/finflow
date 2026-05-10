@@ -13,6 +13,14 @@ const categories = [
   "Other",
 ];
 
+const NAV_ICONS = {
+  dashboard: "🏠",
+  transactions: "💸",
+  recurring: "🔄",
+  insights: "📊",
+  settings: "⚙️",
+};
+
 const initial = {
   users: [
     { id: "u1", name: "You" },
@@ -20,8 +28,10 @@ const initial = {
   ],
   activeUserId: "u1",
   familyMode: false,
+  darkMode: false,
   transactions: [],
   recurring: [],
+  budgets: {},
 };
 
 const state = load();
@@ -38,6 +48,7 @@ let activeScreen = "dashboard";
 
 setupNav();
 setupUserControls();
+applyDarkMode();
 renderAll();
 
 function load() {
@@ -55,10 +66,16 @@ function persist() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function applyDarkMode() {
+  document.documentElement.setAttribute("data-theme", state.darkMode ? "dark" : "light");
+  const btn = document.querySelector("#darkModeBtn");
+  if (btn) btn.textContent = state.darkMode ? "☀️ Light Mode" : "🌙 Dark Mode";
+}
+
 function setupNav() {
   const nav = document.querySelector("#navMenu");
   nav.innerHTML = navItems
-    .map((item) => `<button data-screen="${item}">${label(item)}</button>`)
+    .map((item) => `<button data-screen="${item}"><span>${NAV_ICONS[item]}</span>${label(item)}</button>`)
     .join("");
   nav.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-screen]");
@@ -96,6 +113,12 @@ function setupUserControls() {
     dialog.close();
     persist();
     renderAll();
+  });
+
+  document.querySelector("#darkModeBtn").addEventListener("click", () => {
+    state.darkMode = !state.darkMode;
+    persist();
+    applyDarkMode();
   });
 }
 
@@ -137,6 +160,47 @@ function monthTotal(key) {
     .reduce((sum, t) => sum + Number(t.amount), 0);
 }
 
+// ─── Feature 1: Budget Goals ───────────────────────────────────────────────
+
+function renderBudgetBars() {
+  const activeBudgets = Object.entries(state.budgets).filter(([, v]) => v > 0);
+  if (!activeBudgets.length) return "";
+
+  const monthKey = getMonths(0);
+  const catSpend = {};
+  state.transactions.forEach((t) => {
+    if (!inScope(t) || !t.date.startsWith(monthKey)) return;
+    catSpend[t.category] = (catSpend[t.category] || 0) + Number(t.amount);
+  });
+
+  const bars = activeBudgets
+    .map(([cat, limit]) => {
+      const spent = catSpend[cat] || 0;
+      const pct = Math.min((spent / limit) * 100, 100);
+      const isOver = spent > limit;
+      const cls = pct < 70 ? "ok" : pct < 90 ? "warn" : "over";
+      const overLabel = isOver ? `<span class="over-label">🔴 Over!</span>` : "";
+      return `
+        <div class="budget-bar-wrap">
+          <div class="budget-bar-meta">
+            <span>${cat}${overLabel}</span>
+            <strong>${money(spent)} / ${money(limit)}</strong>
+          </div>
+          <div class="budget-bar-track">
+            <div class="budget-bar-fill ${cls}" style="width:${pct}%"></div>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  return `<article class="card">
+    <h3>Budget Goals — ${new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h3>
+    <div class="budget-section">${bars}</div>
+  </article>`;
+}
+
+// ─── Dashboard ─────────────────────────────────────────────────────────────
+
 function renderDashboard() {
   const thisMonth = monthTotal(getMonths(0));
   const prevMonth = monthTotal(getMonths(-1));
@@ -146,6 +210,7 @@ function renderDashboard() {
     .reduce((sum, r) => sum + Number(r.amount), 0);
 
   const topCats = aggregateCategories(getMonths(0));
+  const budgetSection = renderBudgetBars();
 
   screens.dashboard.innerHTML = `
     <div class="metrics">
@@ -164,8 +229,11 @@ function renderDashboard() {
         ${recentTable()}
       </article>
     </div>
+    ${budgetSection}
   `;
 }
+
+// ─── Transactions ──────────────────────────────────────────────────────────
 
 function renderTransactions() {
   const userId = state.activeUserId;
@@ -186,7 +254,10 @@ function renderTransactions() {
       </form>
     </article>
     <article class="card">
-      <h3>Expense Log</h3>
+      <div class="card-header-row">
+        <h3>Expense Log</h3>
+        <button id="exportCsvBtn" class="secondary btn-sm">⬇ Export CSV</button>
+      </div>
       ${txTable()}
     </article>
   `;
@@ -205,7 +276,42 @@ function renderTransactions() {
     persist();
     renderAll();
   });
+
+  // Feature 3a: CSV Export
+  document.querySelector("#exportCsvBtn").addEventListener("click", exportCSV);
+
+  // Feature 3b: Delete transaction (event delegation)
+  document.querySelector("#txTableBody")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".btn-delete");
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (!id) return;
+    if (confirm("Delete this transaction?")) {
+      state.transactions = state.transactions.filter((t) => t.id !== id);
+      persist();
+      renderAll();
+    }
+  });
 }
+
+function exportCSV() {
+  const txs = state.transactions.filter(inScope);
+  const header = "Date,User,Category,Note,Amount\n";
+  const rows = txs
+    .map((t) => `${t.date},${nameOf(t.userId)},${t.category},"${(t.note || "").replace(/"/g, '""')}",${t.amount}`)
+    .join("\n");
+  const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `hearthledger-${getMonths(0)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ─── Recurring ─────────────────────────────────────────────────────────────
 
 function renderRecurring() {
   screens.recurring.innerHTML = `
@@ -261,13 +367,15 @@ function renderRecurring() {
   });
 }
 
+// ─── Insights ──────────────────────────────────────────────────────────────
+
 function renderInsights() {
   const months = [getMonths(-5), getMonths(-4), getMonths(-3), getMonths(-2), getMonths(-1), getMonths(0)];
   const points = months.map((m) => monthTotal(m));
   screens.insights.innerHTML = `
     <article class="card">
       <h3>6-Month Spend Trend</h3>
-      <canvas id="trendCanvas" width="700" height="240"></canvas>
+      <canvas id="trendCanvas"></canvas>
     </article>
     <article class="card">
       <h3>Ideas to Extend This App</h3>
@@ -280,11 +388,33 @@ function renderInsights() {
       </ul>
     </article>
   `;
-  drawLineChart(document.querySelector("#trendCanvas"), points);
+  // Wait one frame so the canvas has a computed width before drawing
+  requestAnimationFrame(() => {
+    const canvas = document.querySelector("#trendCanvas");
+    if (canvas) drawLineChart(canvas, points, months);
+  });
 }
+
+// ─── Settings ──────────────────────────────────────────────────────────────
 
 function renderSettings() {
   screens.settings.innerHTML = `
+    <article class="card">
+      <h3>Monthly Budget Goals</h3>
+      <p class="hint">Set a monthly spending limit per category. Leave blank for no limit.</p>
+      <div class="form-grid">
+        ${categories
+          .map(
+            (cat) => `
+          <label>${cat}
+            <input type="number" min="0" step="1" class="budget-input" data-cat="${cat}"
+                   value="${state.budgets[cat] || ""}" placeholder="No limit" />
+          </label>`,
+          )
+          .join("")}
+        <button class="full" id="saveBudgets">💾 Save Budget Goals</button>
+      </div>
+    </article>
     <article class="card">
       <h3>Design & Product Notes</h3>
       <ul>
@@ -292,9 +422,24 @@ function renderSettings() {
         <li>Single-click family aggregation toggle for merged visibility.</li>
         <li>Extensible data model (users, transactions, recurring schedules).</li>
       </ul>
-      <button id="seedData" class="secondary">Seed Demo Data</button>
+      <button id="seedData" class="secondary">🌱 Seed Demo Data</button>
     </article>
   `;
+
+  document.querySelector("#saveBudgets").addEventListener("click", () => {
+    document.querySelectorAll(".budget-input").forEach((input) => {
+      const cat = input.dataset.cat;
+      const val = parseFloat(input.value);
+      if (val > 0) {
+        state.budgets[cat] = val;
+      } else {
+        delete state.budgets[cat];
+      }
+    });
+    persist();
+    renderAll();
+  });
+
   document.querySelector("#seedData").addEventListener("click", () => {
     if (state.transactions.length) return;
     const baseDate = new Date();
@@ -315,6 +460,8 @@ function renderSettings() {
   });
 }
 
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
 function aggregateCategories(monthKey) {
   const totals = Object.fromEntries(categories.map((c) => [c, 0]));
   state.transactions.forEach((t) => {
@@ -330,9 +477,19 @@ function txTable() {
   const rows = state.transactions
     .filter(inScope)
     .slice(0, 40)
-    .map((t) => `<tr><td>${t.date}</td><td>${nameOf(t.userId)}</td><td>${t.category}</td><td>${t.note || "-"}</td><td>${money(t.amount)}</td></tr>`)
+    .map(
+      (t) =>
+        `<tr>
+          <td>${t.date}</td><td>${nameOf(t.userId)}</td><td>${t.category}</td>
+          <td>${t.note || "–"}</td><td>${money(t.amount)}</td>
+          <td><button class="btn-delete" data-id="${t.id}" title="Delete transaction">✕</button></td>
+        </tr>`,
+    )
     .join("");
-  return `<table class="table"><thead><tr><th>Date</th><th>User</th><th>Category</th><th>Note</th><th>Amount</th></tr></thead><tbody>${rows || `<tr><td colspan="5">No expenses yet.</td></tr>`}</tbody></table>`;
+  return `<table class="table">
+    <thead><tr><th>Date</th><th>User</th><th>Category</th><th>Note</th><th>Amount</th><th></th></tr></thead>
+    <tbody id="txTableBody">${rows || `<tr><td colspan="6">No expenses yet.</td></tr>`}</tbody>
+  </table>`;
 }
 
 function recentTable() {
@@ -351,31 +508,114 @@ function barList(items) {
       ([name, value]) => `
       <div style="margin-bottom:.6rem;">
         <div style="display:flex;justify-content:space-between;"><span>${name}</span><strong>${money(value)}</strong></div>
-        <div style="background:#e8ece6;height:10px;border-radius:99px;overflow:hidden;"><div style="width:${(value / max) * 100}%;background:#7f927d;height:100%"></div></div>
-      </div>
-    `,
+        <div style="background:var(--line);height:8px;border-radius:99px;overflow:hidden;margin-top:.25rem;">
+          <div style="width:${(value / max) * 100}%;background:var(--primary);height:100%;border-radius:99px;transition:width .4s ease;"></div>
+        </div>
+      </div>`,
     )
     .join("");
 }
 
-function drawLineChart(canvas, points) {
+// ─── Improved line chart ────────────────────────────────────────────────────
+
+function drawLineChart(canvas, points, months) {
+  const isDark = state.darkMode;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth || 700;
+  const h = 240;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
   const ctx = canvas.getContext("2d");
-  const w = canvas.width;
-  const h = canvas.height;
+  ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
+
   const max = Math.max(...points, 1);
-  const pad = 24;
-  ctx.strokeStyle = "#96a694";
-  ctx.lineWidth = 2;
+  const padL = 58, padR = 16, padT = 24, padB = 38;
+  const chartW = w - padL - padR;
+  const chartH = h - padT - padB;
+
+  const gridColor  = isDark ? "#2c3230" : "#e8ece6";
+  const textColor  = isDark ? "#8a9488" : "#5f655e";
+  const lineColor  = isDark ? "#87a584" : "#6d7f6a";
+  const dotBg      = isDark ? "#1c1f23" : "#ffffff";
+
+  // Grid lines + Y-axis labels
+  ctx.font = `11px Inter, system-ui, sans-serif`;
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + (chartH * i) / 4;
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(w - padR, y);
+    ctx.stroke();
+    const val = max * (1 - i / 4);
+    ctx.fillStyle = textColor;
+    ctx.textAlign = "right";
+    const label = val >= 1000 ? `$${(val / 1000).toFixed(1)}k` : `$${val.toFixed(0)}`;
+    ctx.fillText(label, padL - 5, y + 4);
+  }
+
+  const coords = points.map((p, i) => ({
+    x: padL + (i / (points.length - 1 || 1)) * chartW,
+    y: padT + chartH - (p / max) * chartH,
+  }));
+
+  // Gradient fill under the line
+  const grad = ctx.createLinearGradient(0, padT, 0, padT + chartH);
+  grad.addColorStop(0, isDark ? "rgba(135,165,132,0.22)" : "rgba(109,127,106,0.15)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
   ctx.beginPath();
-  points.forEach((p, i) => {
-    const x = pad + (i / (points.length - 1 || 1)) * (w - pad * 2);
-    const y = h - pad - (p / max) * (h - pad * 2);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
+  coords.forEach(({ x, y }, i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+  ctx.lineTo(coords[coords.length - 1].x, padT + chartH);
+  ctx.lineTo(coords[0].x, padT + chartH);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  coords.forEach(({ x, y }, i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
   ctx.stroke();
+
+  // Dots, value labels, month labels
+  coords.forEach(({ x, y }, i) => {
+    // Value label above dot
+    if (points[i] > 0) {
+      ctx.fillStyle = textColor;
+      ctx.textAlign = "center";
+      ctx.font = `10px Inter, system-ui, sans-serif`;
+      const v = points[i];
+      ctx.fillText(v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v.toFixed(0)}`, x, y - 10);
+    }
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = lineColor;
+    ctx.fill();
+    ctx.strokeStyle = dotBg;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Month label on X-axis
+    const [yr, mo] = months[i].split("-").map(Number);
+    const shortMonth = new Date(yr, mo - 1, 1).toLocaleDateString(undefined, {
+      month: "short",
+      year: "2-digit",
+    });
+    ctx.fillStyle = textColor;
+    ctx.textAlign = "center";
+    ctx.font = `10px Inter, system-ui, sans-serif`;
+    ctx.fillText(shortMonth, x, h - padB + 16);
+  });
 }
+
+// ─── Formatters ────────────────────────────────────────────────────────────
 
 function money(v) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(v || 0));
@@ -395,5 +635,9 @@ function metricCard(labelTxt, value, sub) {
 
 function delta(value, suffix) {
   const sign = value >= 0 ? "+" : "-";
-  return `${sign}${money(Math.abs(value))} ${suffix}`;
+  const cls = value > 0 ? "delta-negative" : value < 0 ? "delta-positive" : "";
+  const span = cls
+    ? `<span class="${cls}">${sign}${money(Math.abs(value))} ${suffix}</span>`
+    : `${sign}${money(Math.abs(value))} ${suffix}`;
+  return span;
 }
